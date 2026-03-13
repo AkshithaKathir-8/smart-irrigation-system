@@ -1,0 +1,1 @@
+web: gunicorn irrigation_system.wsgi
