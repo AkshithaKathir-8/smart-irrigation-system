@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -97,4 +98,3 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = '/login/'  # fixes @login_required redirect
 LOGIN_REDIRECT_URL = '/dashboard/'  # after login
 LOGOUT_REDIRECT_URL = '/login/'  # after logout
-STATIC_ROOT = os.path.join(BASE_DIR,'staticfiles')
