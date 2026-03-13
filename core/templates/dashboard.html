@@ -1,0 +1,374 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Irrigation System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Sidebar styling */
+        #sidebarWrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 220px;
+            height: 100%;
+            background-color: #e6f4ea;
+            padding-top: 60px;
+            z-index: 999;
+            display: block;
+        }
+        #sidebar a {
+            display: block;
+            color: #333;
+            padding: 12px 20px;
+            text-decoration: none;
+        }
+        #sidebar a:hover { background-color: #c7e8cd; }
+        #mainContent { margin-left: 240px; padding: 20px 40px; }
+        #sidebarToggle div {
+            width: 30px; height: 4px; background-color: #333; margin: 6px 0;
+        }
+        @media (max-width: 992px) {
+            #sidebarWrapper { display: none; }
+            #mainContent { margin-left: 20px; }
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+
+<!-- Hamburger Button -->
+<button id="sidebarToggle" style="position: fixed; top: 20px; left: 20px; z-index: 1000; border:none; background:none; cursor:pointer;">
+    <div></div>
+    <div></div>
+    <div></div>
+</button>
+
+<!-- Sidebar -->
+<div id="sidebarWrapper">
+    <div id="sidebar">
+        <a href="#waterLogs">💧 Water & Energy Logs</a>
+        <a href="#historySection">📜 Irrigation History</a>
+        <a href="#waterChartSection">📊 Water Usage Chart</a>
+        <a href="#distributionSection">🏘️ Rural Water Distribution</a>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div id="mainContent">
+
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-dark bg-success mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">🌱 Smart Irrigation System</span>
+        </div>
+    </nav>
+
+    <!-- WELCOME GREETING -->
+    <h2>Hi {{ request.user.username }}, welcome!</h2>
+
+    <!-- IRRIGATION PREDICTION MODULE -->
+    {% if farmers %}
+    <div class="card shadow p-4 mb-4 mt-3">
+        <h4 class="mb-4 text-primary">Irrigation Prediction</h4>
+        <form method="POST">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label>Farmer</label>
+                    <select name="farmer" class="form-control" required>
+                        {% for farmer in farmers %}
+                        <option value="{{ farmer.id }}" {% if selected_farmer and selected_farmer.id == farmer.id %}selected{% endif %}>
+                            {{ farmer.user.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label>Crop</label>
+                    <select name="crop" class="form-control" required>
+                        {% for crop in crops %}
+                        <option value="{{ crop.id }}" {% if selected_crop and selected_crop.id == crop.id %}selected{% endif %}>
+                            {{ crop.crop_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label>Temperature (°C)</label>
+                    <input type="number" name="temperature" class="form-control" min="0" max="60" value="{{ temperature|default:'' }}" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label>Soil Moisture (%)</label>
+                    <input type="number" name="soil" class="form-control" min="0" max="100" value="{{ soil|default:'' }}" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label>Rain Expected?</label>
+                    <select name="rain" class="form-control">
+                        <option value="no" {% if rain|default:'' == "no" %}selected{% endif %}>No</option>
+                        <option value="yes" {% if rain|default:'' == "yes" %}selected{% endif %}>Yes</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-success w-100">Predict Irrigation</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- PREDICTION RESULT -->
+    {% if water_needed is not None %}
+    <div class="card shadow mt-4 p-4 border-success">
+        <h4 class="text-success">Prediction Result</h4>
+        <hr>
+        <p><strong>Farmer:</strong> {{ selected_farmer.user.username }}</p>
+        <p><strong>Crop:</strong> {{ selected_crop.crop_name }}</p>
+        <p><strong>Temperature:</strong> {{ temperature }} °C</p>
+        <p><strong>Soil Moisture:</strong> {{ soil }} %</p>
+        <div class="alert alert-info mt-3"><strong>Water Suggested:</strong> {{ water_needed }} litres</div>
+        <div class="alert alert-success">{{ recommendation }}</div>
+    </div>
+    {% endif %}
+
+    <!-- AUTOMATED IRRIGATION MODULE -->
+    {% if automated_water %}
+    <div class="card shadow p-4 mb-4 mt-4 border-primary">
+        <h4 class="text-primary mb-3">Automated Irrigation</h4>
+        <p>This module automatically irrigates based on AI analysis.</p>
+
+        <div class="progress mb-2" style="height: 40px; position: relative;">
+            <div class="progress-bar bg-success"
+                 role="progressbar"
+                 style="width: 0%; font-weight:bold; font-size:16px;"
+                 aria-valuenow="{{ automated_water }}" aria-valuemin="0" aria-valuemax="100"
+                 id="autoProgressBar">
+                0%
+            </div>
+        </div>
+
+        <div id="irrigationStatus" style="font-weight:bold;">Irrigation in Progress...</div>
+
+        <span style="position:absolute; right:10px; top:8px; font-weight:bold;" id="autoRecommendation">
+            {{ automated_recommendation }}
+        </span>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const progressBar = document.getElementById('autoProgressBar');
+        const statusText = document.getElementById('irrigationStatus');
+        const waterValue = {{ automated_water|default:0 }};
+        let start = 0;
+        const duration = 12000;
+        const stepTime = 100;
+        const steps = duration / stepTime;
+        const increment = waterValue / steps;
+
+        const interval = setInterval(() => {
+            start += increment;
+            if(start >= waterValue) start = waterValue;
+            progressBar.style.width = start + '%';
+            progressBar.textContent = Math.round(start) + '%';
+            if(start >= waterValue){
+                clearInterval(interval);
+                statusText.textContent = 'Irrigation Completed ✅';
+            }
+        }, stepTime);
+    });
+    </script>
+    {% endif %}
+
+    <!-- AUTOMATED IRRIGATION FORM -->
+    <form method="POST" action="{% url 'automate_irrigation' %}">
+        {% csrf_token %}
+        {% if selected_crop %}
+            <input type="hidden" name="crop" value="{{ selected_crop.id }}">
+            <input type="hidden" name="temperature" value="{{ temperature }}">
+            <input type="hidden" name="soil" value="{{ soil }}">
+            <input type="hidden" name="rain" value="{{ rain|default:'no' }}">
+            <button type="submit" class="btn btn-primary w-100 mt-3">Run Automated Irrigation</button>
+        {% endif %}
+    </form>
+
+    <!-- WATER & ENERGY LOGS -->
+    <div class="row mt-4" id="waterLogs">
+        <div class="col-md-6 mb-3">
+            <div class="alert alert-info"><strong>Total Water Saved:</strong> {{ total_water_saved }} liters</div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="alert alert-warning"><strong>Total Energy Consumed:</strong> {{ total_energy }} kWh</div>
+        </div>
+    </div>
+
+    <!-- WATER USAGE LOGS TABLE -->
+    <div class="card shadow p-4 mb-5">
+        <h4 class="text-primary mb-3">💧 Water & Energy Usage Logs</h4>
+        <table class="table table-bordered table-striped">
+            <thead class="table-success">
+                <tr>
+                    <th>Date</th>
+                    <th>Predicted Water (L)</th>
+                    <th>Actual Water (L)</th>
+                    <th>Water Saved (L)</th>
+                    <th>Energy Consumed (kWh)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.created_at|date:" d M Y H:i"}}</td>
+                    <td>{{ log.predicted_water_liters }}</td>
+                    <td>{{ log.actual_water_liters }}</td>
+                    <td>{{ log.water_saved_liters }}</td>
+                    <td>{{ log.energy_consumed_kwh }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-center">No logs yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- WATER USAGE CHART -->
+    <div class="card shadow p-4 mb-5" id="waterChartSection">
+        <h4 class="text-primary mb-4">📊 Water Used Over Time</h4>
+        <canvas id="waterChart" height="200"></canvas>
+    </div>
+
+    <!-- IRRIGATION HISTORY -->
+    <hr class="mt-5">
+    <h4 class="mt-4">
+        <a class="text-decoration-none text-dark" data-bs-toggle="collapse" href="#historySection" role="button" aria-expanded="false" aria-controls="historySection">
+            📜 Irrigation History ▼
+        </a>
+    </h4>
+    <div class="collapse mt-3" id="historySection">
+        <div class="card shadow p-4">
+            <table class="table table-bordered table-striped">
+                <thead class="table-success">
+                    <tr>
+                        <th>Farmer</th><th>Crop</th><th>Temp</th><th>Soil</th><th>Water</th><th>Recommendation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in records %}
+                    <tr>
+                        <td>{{ record.farmer.user.username }}</td>
+                        <td>{{ record.crop.crop_name }}</td>
+                        <td>{{ record.temperature }} °C</td>
+                        <td>{{ record.soil_moisture }} %</td>
+                        <td>
+                            {{ record.water_suggested }} L
+                            {% if record.automated %}
+                                <span class="badge bg-success">Automated</span>
+                            {% else %}
+                                <span class="badge bg-warning">Manual</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ record.recommendation }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center">No records yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="alert alert-info mt-3">
+                <strong>Total Water Used:</strong> {{ total_water }} Litres
+            </div>
+        </div>
+    </div>
+
+    <!-- RURAL WATER DISTRIBUTION -->
+    <hr class="mt-5" id="distributionSection">
+    <h4 class="mt-4">🏘️ Rural Water Distribution</h4>
+    <div class="card shadow p-4 mb-5">
+        <table class="table table-bordered table-striped">
+            <thead class="table-success">
+                <tr>
+                    <th>Farmer</th><th>Crop</th><th>AI Suggested (L)</th><th>Allocated (L)</th><th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if water_distribution %}
+                    {% for dist in water_distribution %}
+                    <tr>
+                        <td>{{ dist.farmer }}</td>
+                        <td>{{ dist.crop }}</td>
+                        <td>{{ dist.ai_suggested }}</td>
+                        <td>{{ dist.allocated }}</td>
+                        <td>
+                            {% if dist.status == "Reduced" %}
+                                <span class="text-danger">{{ dist.status }}</span>
+                            {% else %}
+                                <span class="text-success">{{ dist.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr><td colspan="5" class="text-center">No distribution data available</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+        <div class="alert alert-info mt-3">
+            <strong>Total Village Water Available:</strong> {{ total_village_water|default:"0" }} Litres
+        </div>
+    </div>
+
+</div> <!-- End Main Content -->
+
+<!-- JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Sidebar toggle
+    const toggleBtn = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebarWrapper');
+    toggleBtn.addEventListener('click', () => {
+        sidebar.style.display = (sidebar.style.display === 'block' || sidebar.style.display === '') ? 'none' : 'block';
+    });
+
+    // Chart.js: Fixed to use JSON from view
+    const ctx = document.getElementById('waterChart')?.getContext('2d');
+if(ctx){
+    const waterChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: {{ chart_dates_json|safe }},
+            datasets: [
+                {
+                    label: 'Predicted Water (L)',
+                    data: {{ chart_predicted_json|safe }},
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 3,
+                    pointRadius: 5,
+                    pointHoverRadius: 8
+                },
+                {
+                    label: 'Actual Water (L)',
+                    data: {{ chart_actual_json|safe }},
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 3,
+                    pointRadius: 5,
+                    pointHoverRadius: 8
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend:{ display:true }, tooltip:{ enabled:true } },
+            scales: {
+                x: { type:'category', title:{ display:true, text:'Date' }, ticks:{ autoSkip:false, maxRotation:45 } },
+                y: { title:{ display:true, text:'Water (Litres)' }, beginAtZero:true }
+            }
+        }
+    });
+}
+</script>
+</body>
+</html>
