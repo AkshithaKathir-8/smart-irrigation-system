@@ -6,7 +6,7 @@ SECRET_KEY = 'django-insecure-3w9$zsxr75u99vqma-_3wo)mjf*i_&z6-(m8u(jz&84%166a*0
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 # =====================
 # Installed apps
@@ -97,3 +97,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = '/login/'  # fixes @login_required redirect
 LOGIN_REDIRECT_URL = '/dashboard/'  # after login
 LOGOUT_REDIRECT_URL = '/login/'  # after logout
+STATIC_ROOT = os.path.join(BASE_DIR,'staticfiles')
